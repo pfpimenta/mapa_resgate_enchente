@@ -176,6 +176,10 @@ def generate_html():
     # Add markers to the map
     for idx, row in df.iterrows():
         html = """
+        AVISO!
+        POR FAVOR VERIFIQUE SE O ENDEREÇO NO MAPA
+        CORRESPONDE COM AS INFORMAÇÕES ABAIXO!
+        
         Data e hora: {data}<br>
 
         Cidade: {cidade}<br>
