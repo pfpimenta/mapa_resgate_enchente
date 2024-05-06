@@ -22,15 +22,20 @@ from io import StringIO
 import sys
 import os
 from geopy.geocoders import Photon
+from io import BytesIO
+
 geolocator = Photon(user_agent="measurements")
 
 # parameters
 THIS_FOLDERPATH = os.getcwd()
+URL_DADOS_GABINETE = 'https://onedrive.live.com/download?resid=C734B4D1CCD6CEA6!94437&authkey=!ABnn6msPt2x5OFk'
 HTML_FILEPATH =  THIS_FOLDERPATH + "/mapa.html"
 DF_SHEETS_FILEPATH = THIS_FOLDERPATH + "/df_sheets.csv"
+DF_GABINETE_FILEPATH = THIS_FOLDERPATH + "/df_gabinete.csv"
+DF_WITHOUT_COORDS_FILEPATH = THIS_FOLDERPATH + "/df_without_coords.csv"
 DF_UNMAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_unmapped.csv"
 DF_MAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_mapped.csv"
-DEBUG = True # pra rodar mais rapido, soh com 10 rows, pra debug
+DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
 
 def similar(a, b):
@@ -122,7 +127,6 @@ def get_df_sheets() -> pd.DataFrame:
     # get data from google sheets
     df_sheets = get_google_sheet(spreadsheet_id="1JD5serjAxnmqJWP8Y51A6wEZwqZ9A7kEUH1ZwGBx1tY")
     df_sheets = prepare_dataframe(df_sheets) 
-    # breakpoint()
     # remove rows quando LOGRADOURO eh nulo
     df_sheets["len"] = df_sheets["LOGRADOURO"].apply(lambda x : len(x))
     df_sheets = df_sheets[df_sheets["len"]>0]
@@ -130,10 +134,49 @@ def get_df_sheets() -> pd.DataFrame:
     df_sheets = df_sheets.drop("len",axis = 1)
     return df_sheets
 
-def get_df_with_coordinates(df_sheets: pd.DataFrame) -> pd.DataFrame:
+def get_df_gabinete() -> pd.DataFrame:
+    response = requests.get(URL_DADOS_GABINETE)
+    assert response.status_code == 200, "Erro ao baixar o arquivo"
+    # Usando pandas para ler os dados da planilha
+    df_gabinete = pd.read_excel(BytesIO(response.content))
+    print(f"Fetched {len(df_gabinete)} rows from GABINETE")
+
+    return df_gabinete
+
+def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
+    """ deixa as colunas iguais a df_sheets
+    """
+    # df_sheets.columns:
+    # ['DATAHORA', 'DESCRICAORESGATE', 'DETALHE', 'LOGRADOURO',
+    # 'CONTATORESGATADO', 'INFORMACOES', 'NUM', 'COMPL', 'BAIRRO', 'CIDADE',
+    # 'CEP', 'NOMEPESSOAS', 'CADASTRADO', 'ENCERRADO'],
+    # df_gabinete.columns:
+    # ['Unnamed: 0', 'PRIORIDADES', 'Bairro', 'OBSERVAÇÃO', 'CONTATO', 'OBS',
+    # 'RESGATADOS ', 'Unnamed: 7'],
+    df_gabinete.rename(columns={"Bairro": "BAIRRO",
+                                "OBSERVAÇÃO": "DESCRICAORESGATE",
+                                "CONTATO": "CONTATORESGATADO"
+                                }, inplace=True)
+    df_gabinete["ADDRESS"] = df_gabinete.iloc[:, 0] + df_gabinete["PRIORIDADES"]
+    # ADDRESS = LOGRADOURO + NUMERO + TUDO
+    df_gabinete["LOGRADOURO"] = df_gabinete["ADDRESS"]
+    df_gabinete["NUM"] = ""
+    df_gabinete["COMPL"] = ""
+    df_gabinete["CIDADE"] = ""
+    df_gabinete["DETALHE"] = ""
+    df_gabinete["CEP"] = ""
+    df_gabinete["INFORMACOES"] = ""
+    df_gabinete["NOMEPESSOAS"] = ""
+    df_gabinete["CADASTRADO"] = ""
+    df_gabinete["ENCERRADO"] = ""
+    df_gabinete.drop(axis=1, labels=['Unnamed: 0', 'Unnamed: 7', 'PRIORIDADES'], inplace=True)
+    return df_gabinete
+
+
+def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
     #FIRST ATTEMPT
     if not os.path.exists(DF_MAPPED_FILEPATH):
-        df = get_coords_df(df_sheets)
+        df = get_coords_df(df_without_coords)
         df.to_csv(DF_MAPPED_FILEPATH, index = False)
         print(f"Saved {DF_MAPPED_FILEPATH}")
 
@@ -142,9 +185,9 @@ def get_df_with_coordinates(df_sheets: pd.DataFrame) -> pd.DataFrame:
     for t in range(num_attempts):
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
         len0 = len(df_previous)
-        df_unmapped = pd.merge(df_sheets, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
+        df_unmapped = pd.merge(df_without_coords, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
         df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
-        df_unmapped = df_unmapped[list(df_sheets.columns)]
+        df_unmapped = df_unmapped[list(df_without_coords.columns)]
         df = get_coords_df(df_unmapped)
         df = pd.concat([df,df_previous])
         df = df.drop_duplicates(["DATAHORA","DESCRICAORESGATE"])
@@ -179,7 +222,7 @@ def generate_html():
         AVISO!
         POR FAVOR VERIFIQUE SE O ENDEREÇO NO MAPA
         CORRESPONDE COM AS INFORMAÇÕES ABAIXO!
-        
+
         Data e hora: {data}<br>
 
         Cidade: {cidade}<br>
@@ -223,19 +266,34 @@ def generate_html():
     
 def main():
     df_sheets = get_df_sheets()
+    df_gabinete = get_df_gabinete()
+    df_gabinete = process_df_gabinete(df_gabinete)
+
+    # save CSVs 
+    df_sheets.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
+    print(f"Saved {DF_SHEETS_FILEPATH}")
+    df_gabinete.to_csv(path_or_buf=DF_GABINETE_FILEPATH)
+    print(f"Saved {DF_GABINETE_FILEPATH}")
+
+    # merge data from LAGOM and GABINETE sources:
+    df_without_coords = pd.concat([df_sheets, df_gabinete])
+
+    # save CSV before getting coordinates
+    df_without_coords.to_csv(path_or_buf=DF_WITHOUT_COORDS_FILEPATH)
+    print(f"Saved {DF_WITHOUT_COORDS_FILEPATH}")
 
     if DEBUG:
         # pra rodar mais rapido
-        df_sheets = df_sheets.iloc[0:5]
+        df_without_coords = df_without_coords.iloc[0:5]
 
     # save CSV before getting coordinates
-    df_sheets.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
+    df_without_coords.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
     print(f"Saved {DF_SHEETS_FILEPATH}")
 
     # TODO pegar coordenadas ja geradas pra nao ter que pegar de novo
 
     # pegar coordenadas
-    df, df_unmapped = get_df_with_coordinates(df_sheets=df_sheets)
+    df, df_unmapped = get_df_with_coordinates(df_without_coords=df_without_coords)
 
     # criar HTML do mapa
     generate_html()
@@ -244,9 +302,9 @@ def main():
     df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
     # print(f"Loaded {DF_MAPPED_FILEPATH}")
     len0 = len(df_previous)
-    df_unmapped = pd.merge(df_sheets, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
+    df_unmapped = pd.merge(df_without_coords, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
     df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
-    df_unmapped = df_unmapped[list(df_sheets.columns)]
+    df_unmapped = df_unmapped[list(df_without_coords.columns)]
 
     df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
 
