@@ -1,5 +1,5 @@
-#mapa resgate script 2024_05_05_0
-
+#mapa resgate script 2024_06_05_0
+from difflib import SequenceMatcher
 import pandas as pd
 import folium
 from geopy.geocoders import Nominatim
@@ -24,26 +24,53 @@ import os
 from geopy.geocoders import Photon
 geolocator = Photon(user_agent="measurements")
 
-def get_coords(address):
-    try:
-        # Geocode the address
-        location = geolocator.geocode(address, timeout=1000)
-        if location:
-            return [location.latitude, location.longitude, "1"] # Attempt to extract the ZIP code
-        else:
-            print(f"Failed to fetch the coordinates for: {address}")
-            return ["","","0"]
-    
-    except:
-        return ["","","0"]
+def similar(a, b):
+    return SequenceMatcher(None, a, b).ratio()
 
+def similarity_value(x, location):
+    if "city" in location.raw["properties"].keys():
+        city = location.raw["properties"]["city"]
+    else:
+        return False
+        
+    if "street" in location.raw["properties"].keys():
+        street = location.raw["properties"]["street"]
+    elif "name" in location.raw["properties"].keys():
+        street = location.raw["properties"]["name"]
+    else:
+        return False
+    
+    sims = [similar(street, x["LOGRADOURO"]), similar(city, x["CIDADE"])]
+    min_sim = min(sims)
+    return min_sim
+    
+def get_coords(row):
+    # Geocode the address
+    locs = geolocator.geocode(row["address"], timeout=1000, location_bias = (-30.0346, -51.2177),  exactly_one=False, limit = 10)
+    if not locs:
+        print(f"Failed to fetch the coordinates for: {row["address"]}")
+        return ["","","0"]
+    locs = [l for l in locs if "state" in l.raw["properties"].keys()]
+    locs = [l for l in locs if l.raw["properties"]["state"] == "Rio Grande do Sul"]
+    locs = [l for l in locs if similarity_value(row,l)>=0.75]
+    if len(locs)==0:
+        print(f"Failed to fetch the coordinates for: {row["address"]}")
+        return ["","","0"]
+    locs = sorted(locs, key = lambda l : similarity_value(row,l), reverse = True)
+    location = locs[0]
+    return [location.latitude, location.longitude, "1"] # Attempt to extract the ZIP code
+    
 def get_coords_df(df_sheets):
     df = df_sheets.copy()
     df["address"] = df["CIDADE"] + "," + df["LOGRADOURO"] + "," + df["NUM"]
     outs = []
+    L = len(df)
     for index, row in df.iterrows():
-        out = get_coords(row["address"])
+        if index % 5==0:
+            print("row {}/{}".format(index,L)) #print current step
+        out = get_coords(row)
         outs.append(out)
+        
     lats = [str(o[0]) for o in outs]
     longs =[str(o[1]) for o in outs]
     sucs = [str(o[2]) for o in outs]
@@ -57,13 +84,6 @@ def get_coords_df(df_sheets):
 #----------------------------------------------------------------------------
 # Pull data from sheets -----------------------------------------------------
 #----------------------------------------------------------------------------
-
-# def scrapeDataFromSpreadsheet() -> typing.List[typing.List[str]]:
-#     html = requests.get('https://docs.google.com/spreadsheets/d/1JD5serjAxnmqJWP8Y51A6wEZwqZ9A7kEUH1ZwGBx1tY/edit?usp=sharing').text
-#     soup = BeautifulSoup(html, 'html.parser')
-#     salas_cine = soup.find_all('table')[0]
-#     rows = [[td.text for td in row.find_all("td")] for row in salas_cine.find_all('tr')]
-#     return rows
 
 def get_google_sheet(spreadsheet_id: str) -> pd.DataFrame:
     url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=csv"
@@ -95,7 +115,7 @@ df_sheets["len"] = df_sheets["LOGRADOURO"].apply(lambda x : len(x))
 df_sheets = df_sheets[df_sheets["len"]>0]
 df_sheets = df_sheets[df_sheets["ENCERRADO"]!="S"]
 df_sheets = df_sheets.drop("len",axis = 1)
-df_sheets = df_sheets.dropna(axis=1)
+
 
 #FIRST ATTEMPT
 if not os.path.exists("previous.csv"):
@@ -128,42 +148,41 @@ df = pd.read_csv("previous.csv", dtype = str)
 
 # Add markers to the map
 for idx, row in df.iterrows():
-    try:
-        html = """
-        Data e hora: {data}<br>
-        
-        Descrição: {desc}<br>
+    html = """
+    Data e hora: {data}<br>
 
-        Detalhe: {det}<br>
-        
-        Informações: {info}<br>
-        
-        Contato: {contato}<br>
+    Cidade: {cidade}<br>
+    
+    Descrição: {desc}<br>
 
-        Logradouro: {logradouro}<br>
+    Detalhe: {det}<br>
+    
+    Informações: {info}<br>
+    
+    Contato: {contato}<br>
 
-        Número: {num} <br>
+    Logradouro: {logradouro}<br>
 
-        Complemento: {compl}<br>
-        """.format(data = row["DATAHORA"],
-                   desc = row['DESCRICAORESGATE'],
-                   det = row["DETALHE"],
-                   info = row['INFORMACOES'],
-                   contato = row["CONTATORESGATADO"],
-                   logradouro = row["LOGRADOURO"],
-                   num = row["NUM"],
-                   compl = row["COMPL"]
-                )
-        lat = row["latitude"]
-        long = row["longitude"]
-        iframe = folium.IFrame(html)
-        popup = folium.Popup(iframe,
-                             min_width=500,
-                             max_width=500)
-        folium.Marker([lat,long], popup=popup).add_to(marker_cluster)
-    except:
-        if len(row["CEP"]) <8:
-            unable.append(list(row))
+    Número: {num} <br>
+
+    Complemento: {compl}<br>
+    """.format(data = row["DATAHORA"],
+               cidade = row["CIDADE"],
+               desc = row['DESCRICAORESGATE'],
+               det = row["DETALHE"],
+               info = row['INFORMACOES'],
+               contato = row["CONTATORESGATADO"],
+               logradouro = row["LOGRADOURO"],
+               num = row["NUM"],
+               compl = row["COMPL"]
+            )
+    lat = row["latitude"]
+    long = row["longitude"]
+    iframe = folium.IFrame(html)
+    popup = folium.Popup(iframe,
+                         min_width=500,
+                         max_width=500)
+    folium.Marker([lat,long], popup=popup).add_to(marker_cluster)
 
 
 df_previous = pd.read_csv("previous.csv", dtype = str)
