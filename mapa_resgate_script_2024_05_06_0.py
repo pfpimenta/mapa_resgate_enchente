@@ -23,6 +23,68 @@ import sys
 import os
 from geopy.geocoders import Photon
 from io import BytesIO
+from openai import OpenAI
+import openai
+
+def is_openai_api_key_valid(api_key):
+    """Returns True if the provided OpenAI API key is valid, False otherwise."""
+    url = "https://api.openai.com/v1/models"
+    headers = {
+        "Authorization": f"Bearer {api_key}"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        # A 200 status code means the API key is valid
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        # If there's an exception, like a network problem, assume the key is invalid
+        return False
+
+
+
+def gpt_clean_address(address):
+    query = r"""
+    Consider the following address:/'{end}'
+    
+    Output a cleaner version of this address, to input into a geocoder.
+    
+    Answer only the clean address, nothing else
+    """.format(end=address)
+
+    response = gpt_client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=[
+    {
+      "role": "user",
+      "content": query}
+    ],
+    temperature=0.7,
+    max_tokens=64,
+    top_p=1
+    )
+    return response.choices[0].message.content
+ 
+def get_client():
+  
+    try:
+        gpt_api_key=''
+        with open('gpt_key.txt', 'r') as file:
+            gpt_api_key = file.read().replace('\n', '')
+        print(gpt_api_key)
+        gpt_client = OpenAI(api_key = gpt_api_key)
+        #check if client is working
+        if is_openai_api_key_valid(gpt_api_key):
+            print("Successful gpt client obtained\n")
+            return gpt_client, True
+        else:
+            print("Failed to obtain gpt client\n")
+            return False, False
+    except:
+        print("Failed to obtain gpt client\n")
+        return False, False
+    
+gpt_client, gpt_success = get_client()   
 
 geolocator = Photon(user_agent="measurements")
 
@@ -59,10 +121,12 @@ def similarity_value(x, location):
     min_sim = min(sims)
     return min_sim
     
-def get_coords(row):
+def get_coords(row, use_gpt = True):
     try:
         # Geocode the address
         address = row['address']
+        if use_gpt:
+            address = gpt_clean_address(address)
         locs = geolocator.geocode(address, timeout=1000, location_bias = (-30.0346, -51.2177),  exactly_one=False, limit = 10)
         if not locs:
             print(f"Failed to fetch the coordinates for: {address}")
@@ -89,7 +153,7 @@ def get_coords_df(df_sheets):
     for index, row in df.iterrows():
         if index % 5==0:
             print("row {}/{}".format(index,L)) #print current step
-        out = get_coords(row)
+        out = get_coords(row, use_gpt = gpt_success)
         outs.append(out)
         
     lats = [str(o[0]) for o in outs]
