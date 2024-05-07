@@ -60,21 +60,25 @@ def similarity_value(x, location):
     return min_sim
     
 def get_coords(row):
-    # Geocode the address
-    address = row['address']
-    locs = geolocator.geocode(address, timeout=1000, location_bias = (-30.0346, -51.2177),  exactly_one=False, limit = 10)
-    if not locs:
+    try:
+        # Geocode the address
+        address = row['address']
+        locs = geolocator.geocode(address, timeout=1000, location_bias = (-30.0346, -51.2177),  exactly_one=False, limit = 10)
+        if not locs:
+            print(f"Failed to fetch the coordinates for: {address}")
+            return ["","","0"]
+        locs = [l for l in locs if "state" in l.raw["properties"].keys()]
+        locs = [l for l in locs if l.raw["properties"]["state"] == "Rio Grande do Sul"]
+        locs = [l for l in locs if similarity_value(row,l)>=0.75]
+        if len(locs)==0:
+            print(f"Failed to fetch the coordinates for: {address}")
+            return ["","","0"]
+        locs = sorted(locs, key = lambda l : similarity_value(row,l), reverse = True)
+        location = locs[0]
+        return [location.latitude, location.longitude, "1"] # Attempt to extract the ZIP code
+    except:
         print(f"Failed to fetch the coordinates for: {address}")
         return ["","","0"]
-    locs = [l for l in locs if "state" in l.raw["properties"].keys()]
-    locs = [l for l in locs if l.raw["properties"]["state"] == "Rio Grande do Sul"]
-    locs = [l for l in locs if similarity_value(row,l)>=0.75]
-    if len(locs)==0:
-        print(f"Failed to fetch the coordinates for: {address}")
-        return ["","","0"]
-    locs = sorted(locs, key = lambda l : similarity_value(row,l), reverse = True)
-    location = locs[0]
-    return [location.latitude, location.longitude, "1"] # Attempt to extract the ZIP code
     
 def get_coords_df(df_sheets):
     print(f"Getting coordinates for {len(df_sheets)} addresses...")
@@ -131,8 +135,7 @@ def get_df_sheets() -> pd.DataFrame:
     # get data from google sheets
     df_sheets = get_google_sheet(spreadsheet_id="1JD5serjAxnmqJWP8Y51A6wEZwqZ9A7kEUH1ZwGBx1tY")
     df_sheets = prepare_dataframe(df_sheets) 
-    df_sheets = df_sheets.fillna("")
-    # remove rows quando LOGRADOURO eh nulo
+    df_sheets = df_sheets[df_sheets['LOGRADOURO'].notna()]
     df_sheets["len"] = df_sheets["LOGRADOURO"].apply(lambda x : len(x))
     df_sheets = df_sheets[df_sheets["len"]>0]
     df_sheets = df_sheets[df_sheets["ENCERRADO"]!="S"]
