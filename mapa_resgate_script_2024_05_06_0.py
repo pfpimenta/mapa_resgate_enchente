@@ -147,7 +147,7 @@ def get_coords(row, use_gpt = True):
 def get_coords_df(df_sheets):
     print(f"Getting coordinates for {len(df_sheets)} addresses...")
     df = df_sheets.copy()
-    df["address"] = df["CIDADE"] + "," + df["LOGRADOURO"] + "," + df["NUM"]
+    df["address"] = df["CIDADE"] + "," +df["BAIRRO"]  + "," + df["LOGRADOURO"] + "," + df["NUM"]
     outs = []
     L = len(df)
     for index, row in df.iterrows():
