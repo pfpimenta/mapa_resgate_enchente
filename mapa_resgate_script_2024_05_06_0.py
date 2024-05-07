@@ -26,7 +26,7 @@ from io import BytesIO
 from openai import OpenAI
 import openai
 
-def is_openai_api_key_valid(api_key):
+def is_openai_api_key_valid(api_key: str):
     """Returns True if the provided OpenAI API key is valid, False otherwise."""
     url = "https://api.openai.com/v1/models"
     headers = {
@@ -43,7 +43,7 @@ def is_openai_api_key_valid(api_key):
 
 
 
-def gpt_clean_address(address):
+def gpt_clean_address(address: str):
     query = r"""
     Consider the following address:/'{end}'
     
@@ -101,10 +101,10 @@ DF_TEMP_FILEPATH =  THIS_FOLDERPATH + "/df_temp.csv"
 DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
 
-def similar(a, b):
+def similar(a: str, b: str):
     return SequenceMatcher(None, a, b).ratio()
 
-def similarity_value(x, location):
+def similarity_value(x: pd.core.series.Series, location: geopy.location.Location):
     if "city" in location.raw["properties"].keys():
         city = location.raw["properties"]["city"]
     else:
@@ -121,7 +121,7 @@ def similarity_value(x, location):
     min_sim = min(sims)
     return min_sim
     
-def get_coords(row, use_gpt = True):
+def get_coords(row: pd.core.series.Series, use_gpt = True):
     try:
         # Geocode the address
         address = row['address']
@@ -144,17 +144,19 @@ def get_coords(row, use_gpt = True):
         print(f"Failed to fetch the coordinates for: {address}")
         return ["","","0"]
     
-def get_coords_df(df_sheets):
+def get_coords_df(df_sheets: pd.DataFrame):
     print(f"Getting coordinates for {len(df_sheets)} addresses...")
     df = df_sheets.copy()
     df["address"] = df["CIDADE"] + "," +df["BAIRRO"]  + "," + df["LOGRADOURO"] + "," + df["NUM"]
     outs = []
     L = len(df)
+    idx = 0
     for index, row in df.iterrows():
         if index % 5==0:
-            print("row {}/{}".format(index,L)) #print current step
+            print("row {}/{}".format(idx,L)) #print current step
         out = get_coords(row, use_gpt = gpt_success)
         outs.append(out)
+        idx += 1
         
     lats = [str(o[0]) for o in outs]
     longs =[str(o[1]) for o in outs]
