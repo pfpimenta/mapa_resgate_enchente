@@ -25,6 +25,7 @@ from geopy.geocoders import Photon
 from io import BytesIO
 from openai import OpenAI
 import openai
+import googlemaps
 
 def is_openai_api_key_valid(api_key: str):
     """Returns True if the provided OpenAI API key is valid, False otherwise."""
@@ -85,7 +86,7 @@ def get_client():
         return False, False
     
 gpt_client, gpt_success = get_client()   
-
+gmaps = googlemaps.Client(key="") # Inserir API Key aqui!
 geolocator = Photon(user_agent="measurements")
 
 # parameters
@@ -103,23 +104,6 @@ DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
 def similar(a: str, b: str):
     return SequenceMatcher(None, a, b).ratio()
-
-def similarity_value(x: pd.core.series.Series, location: geopy.location.Location):
-    if "city" in location.raw["properties"].keys():
-        city = location.raw["properties"]["city"]
-    else:
-        return False
-        
-    if "street" in location.raw["properties"].keys():
-        street = location.raw["properties"]["street"]
-    elif "name" in location.raw["properties"].keys():
-        street = location.raw["properties"]["name"]
-    else:
-        return False
-    
-    sims = [similar(street, x["LOGRADOURO"]), similar(city, x["CIDADE"])]
-    min_sim = min(sims)
-    return min_sim
     
 def get_coords(row: pd.core.series.Series, use_gpt = True):
     try:
@@ -127,19 +111,12 @@ def get_coords(row: pd.core.series.Series, use_gpt = True):
         address = row['address']
         if use_gpt:
             address = gpt_clean_address(address)
-        locs = geolocator.geocode(address, timeout=1000, location_bias = (-30.0346, -51.2177),  exactly_one=False, limit = 10)
-        if not locs:
+        geocode_result = gmaps.geocode(address)
+        if not geocode_result:
             print(f"Failed to fetch the coordinates for: {address}")
             return ["","","0"]
-        locs = [l for l in locs if "state" in l.raw["properties"].keys()]
-        locs = [l for l in locs if l.raw["properties"]["state"] == "Rio Grande do Sul"]
-        locs = [l for l in locs if similarity_value(row,l)>=0.75]
-        if len(locs)==0:
-            print(f"Failed to fetch the coordinates for: {address}")
-            return ["","","0"]
-        locs = sorted(locs, key = lambda l : similarity_value(row,l), reverse = True)
-        location = locs[0]
-        return [location.latitude, location.longitude, "1"] # Attempt to extract the ZIP code
+        location = geocode_result[0]['geometry']['location']
+        return [location['lat'], location['lng'], "1"] # Attempt to extract the ZIP code
     except:
         print(f"Failed to fetch the coordinates for: {address}")
         return ["","","0"]
