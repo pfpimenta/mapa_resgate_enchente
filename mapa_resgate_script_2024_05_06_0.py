@@ -273,6 +273,12 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
     num_unmapped = len(df_unmapped)
     print(f"num_mapped: {num_mapped}, num_unmapped: {num_unmapped}")
 
+    #update unmapped rows
+    df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
+    df_unmapped = pd.merge(df_without_coords, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
+    df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
+    df_unmapped = df_unmapped[list(df_without_coords.columns)]
+    df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
     return df, df_unmapped
 
 def generate_html():
@@ -369,16 +375,6 @@ def main():
 
     # criar HTML do mapa
     generate_html()
-
-    # TODO ?
-    df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
-    # print(f"Loaded {DF_MAPPED_FILEPATH}")
-    len0 = len(df_previous)
-    df_unmapped = pd.merge(df_without_coords, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
-    df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
-    df_unmapped = df_unmapped[list(df_without_coords.columns)]
-
-    df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
 
 
 if __name__ == "__main__":
