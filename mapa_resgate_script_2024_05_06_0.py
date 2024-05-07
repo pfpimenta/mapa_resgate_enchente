@@ -35,6 +35,7 @@ DF_GABINETE_FILEPATH = THIS_FOLDERPATH + "/df_gabinete.csv"
 DF_WITHOUT_COORDS_FILEPATH = THIS_FOLDERPATH + "/df_without_coords.csv"
 DF_UNMAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_unmapped.csv"
 DF_MAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_mapped.csv"
+DF_TEMP_FILEPATH =  THIS_FOLDERPATH + "/df_temp.csv"
 DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
 
@@ -106,7 +107,7 @@ def get_google_sheet(spreadsheet_id: str) -> pd.DataFrame:
     response = requests.get(url)
     if response.status_code == 200:
         csv_data = StringIO(response.content.decode("utf-8"))
-        df = pd.read_csv(csv_data, sep=",")
+        df = pd.read_csv(csv_data, sep=",", dtype=str)
         print(f"Fetched {len(df)} rows from Google Sheets")
     else:
         print(f"Requisicao dos dados do Google Sheet falhou com erro {response.status_code}")
@@ -117,6 +118,9 @@ def get_google_sheet(spreadsheet_id: str) -> pd.DataFrame:
 
 def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     cols = df.iloc[0]
+    #renomear colunas para evitar incompatibilidades com o sheet
+    cols[0:14] = ['DATAHORA','NUMPESSOAS','DETALHES','LOGRADOURO','CONTATORESGATADO','DESCRICAORESGATE',
+              'NUM','COMPLEMENTO','BAIRRO','CIDADE','CEP','NOMEPESSOAS','CADASTRADO','ENCERRADO']
     named_cols = [c for c in cols if len(c)>0]
     df.columns = cols
     df = df[named_cols]
@@ -127,6 +131,7 @@ def get_df_sheets() -> pd.DataFrame:
     # get data from google sheets
     df_sheets = get_google_sheet(spreadsheet_id="1JD5serjAxnmqJWP8Y51A6wEZwqZ9A7kEUH1ZwGBx1tY")
     df_sheets = prepare_dataframe(df_sheets) 
+    df_sheets = df_sheets.fillna("")
     # remove rows quando LOGRADOURO eh nulo
     df_sheets["len"] = df_sheets["LOGRADOURO"].apply(lambda x : len(x))
     df_sheets = df_sheets[df_sheets["len"]>0]
