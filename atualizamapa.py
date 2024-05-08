@@ -232,7 +232,7 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
     df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
     return df, df_unmapped
 
-def generate_html():
+def generate_html(df_without_coords: pd.DataFrame):
     """ gera mapa a partir do arquivo df_mapped.csv
     """
 
@@ -247,6 +247,14 @@ def generate_html():
 
     # treat NaN values
     df = df[df["latitude"].notna()]
+
+    #remove ENCERRADOS
+    print("Removing ENCERRADO")
+    print("Before removal: {} rows".format(len(df)))
+    df = pd.merge(df_without_coords, df[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
+    df = df[df["success"]=="1"]
+    df = df[df["ENCERRADO"]!="S"]
+    print("After removal: {} rows".format(len(df)))
 
     # Add markers to the map
     for idx, row in df.iterrows():
@@ -338,7 +346,7 @@ def main():
 
     # criar HTML do mapa
     try:
-        generate_html()
+        generate_html(df_without_coords)
     except Exception as e:
         print(e)
         breakpoint()
