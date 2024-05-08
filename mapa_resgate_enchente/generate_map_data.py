@@ -12,6 +12,7 @@ import geopy
 from typing import Tuple
 from generate_html import generate_html
 from paths import DF_SHEETS_FILEPATH, DF_GABINETE_FILEPATH, DF_WITHOUT_COORDS_FILEPATH, DF_UNMAPPED_FILEPATH, DF_MAPPED_FILEPATH, MAPPED_BACKUPS_FOLDERPATH
+from dotenv import load_dotenv
 
 GEOLOCATOR = Photon(user_agent="measurements")
 
@@ -21,6 +22,9 @@ IDENTIFIER_COLUMNS = ["DATAHORA", "NUMPESSOAS", "DETALHES", "LOGRADOURO", "CONTA
                       "DESCRICAORESGATE", "NUM","COMPLEMENTO","BAIRRO","CIDADE"]
 DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
+# Access the api key
+load_dotenv("api_key.env")
+api_key = os.getenv('API_KEY')
 
 def get_place_id(input_text: str, api_key: str) -> str:
     endpoint_url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
