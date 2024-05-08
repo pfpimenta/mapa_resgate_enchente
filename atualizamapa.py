@@ -31,7 +31,7 @@ DF_WITHOUT_COORDS_FILEPATH = THIS_FOLDERPATH + "/df_without_coords.csv"
 DF_UNMAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_unmapped.csv"
 DF_MAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_mapped.csv"
 DF_TEMP_FILEPATH =  THIS_FOLDERPATH + "/df_temp.csv"
-DEBUG = True # pra rodar mais rapido, soh com 10 rows, pra debug
+DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
 
 # TODO usar essas funcoes!!!
