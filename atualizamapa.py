@@ -17,7 +17,6 @@ from typing import Tuple
 GEOLOCATOR = Photon(user_agent="measurements")
 
 # parameters
-api_key = 'AIzaSyDL56Xt2OqMo8uTyIS1xxgdcG6JhSQWSpU'
 
 IDENTIFIER_COLUMNS = ["DATAHORA", "NUMPESSOAS", "DETALHES", "LOGRADOURO", "CONTATORESGATADO", 
                       "DESCRICAORESGATE", "NUM","COMPLEMENTO","BAIRRO","CIDADE"]
