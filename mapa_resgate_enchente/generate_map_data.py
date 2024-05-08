@@ -16,7 +16,6 @@ from paths import DF_SHEETS_FILEPATH, DF_GABINETE_FILEPATH, DF_WITHOUT_COORDS_FI
 GEOLOCATOR = Photon(user_agent="measurements")
 
 # parameters
-api_key = 'AIzaSyDL56Xt2OqMo8uTyIS1xxgdcG6JhSQWSpU'
 URL_DADOS_GABINETE = 'https://onedrive.live.com/download?resid=C734B4D1CCD6CEA6!94437&authkey=!ABnn6msPt2x5OFk'
 IDENTIFIER_COLUMNS = ["DATAHORA", "NUMPESSOAS", "DETALHES", "LOGRADOURO", "CONTATORESGATADO", 
                       "DESCRICAORESGATE", "NUM","COMPLEMENTO","BAIRRO","CIDADE"]
@@ -184,6 +183,11 @@ def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
     df_gabinete.drop(axis=1, labels=['Unnamed: 0', 'Unnamed: 7', 'PRIORIDADES'], inplace=True)
     return df_gabinete
 
+def get_df_unmapped(df_previous: pd.DataFrame, df_without_coords : pd.DataFrame) -> pd.DataFrame:
+    df_unmapped = pd.merge(df_without_coords, df_previous[IDENTIFIER_COLUMNS+["success","latitude","longitude"]], on = IDENTIFIER_COLUMNS, how = "left")
+    df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
+    df_unmapped = df_unmapped[list(df_without_coords.columns)]
+    return df_unmapped
 
 def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
 
@@ -193,15 +197,11 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
         print(f"Saved {DF_MAPPED_FILEPATH}")
         #collect info from unmapped (required to save unmapped values)
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
-        df_unmapped = pd.merge(df_without_coords, df_previous[IDENTIFIER_COLUMNS+["success","latitude","longitude"]], on = IDENTIFIER_COLUMNS, how = "left")
-        df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
-        df_unmapped = df_unmapped[list(df_without_coords.columns)]
+        df_unmapped = get_df_unmapped(df_previous, df_without_coords)
     else:
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
         len0 = len(df_previous)
-        df_unmapped = pd.merge(df_without_coords, df_previous[IDENTIFIER_COLUMNS+["success","latitude","longitude"]], on = IDENTIFIER_COLUMNS, how = "left")
-        df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
-        df_unmapped = df_unmapped[list(df_without_coords.columns)]
+        df_unmapped = get_df_unmapped(df_previous, df_without_coords)
         df = get_coords_df(df_unmapped) # DEBUG
         df = pd.concat([df,df_previous])
         
