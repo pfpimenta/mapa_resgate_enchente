@@ -19,6 +19,8 @@ GEOLOCATOR = Photon(user_agent="measurements")
 # parameters
 api_key = 'AIzaSyDL56Xt2OqMo8uTyIS1xxgdcG6JhSQWSpU'
 
+IDENTIFIER_COLUMNS = ["DATAHORA", "NUMPESSOAS", "DETALHES", "LOGRADOURO", "CONTATORESGATADO", 
+                      "DESCRICAORESGATE", "NUM","COMPLEMENTO","BAIRRO","CIDADE"]
 THIS_FOLDERPATH = os.getcwd()
 URL_DADOS_GABINETE = 'https://onedrive.live.com/download?resid=C734B4D1CCD6CEA6!94437&authkey=!ABnn6msPt2x5OFk'
 HTMLMAPA_FILEPATH =  THIS_FOLDERPATH + "/mapa.html"
@@ -29,7 +31,8 @@ DF_WITHOUT_COORDS_FILEPATH = THIS_FOLDERPATH + "/df_without_coords.csv"
 DF_UNMAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_unmapped.csv"
 DF_MAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_mapped.csv"
 DF_TEMP_FILEPATH =  THIS_FOLDERPATH + "/df_temp.csv"
-DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
+DEBUG = True # pra rodar mais rapido, soh com 10 rows, pra debug
+
 
 # TODO usar essas funcoes!!!
 def get_place_id(input_text: str, api_key: str) -> str:
@@ -226,7 +229,7 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
 
     #update unmapped rows
     df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
-    df_unmapped = pd.merge(df_without_coords, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
+    df_unmapped = pd.merge(df_without_coords, df_previous[IDENTIFIER_COLUMNS + ["success","latitude","longitude"]], on = IDENTIFIER_COLUMNS, how = "left")
     df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
     df_unmapped = df_unmapped[list(df_without_coords.columns)]
     df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
@@ -251,7 +254,8 @@ def generate_html(df_without_coords: pd.DataFrame):
     #remove ENCERRADOS
     print("Removing ENCERRADO")
     print("Before removal: {} rows".format(len(df)))
-    df = pd.merge(df_without_coords, df[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
+    df = pd.merge(df_without_coords, df[IDENTIFIER_COLUMNS + ["success","latitude","longitude"]], 
+                  on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
     df = df[df["success"]=="1"]
     df = df[df["ENCERRADO"]!="S"]
     print("After removal: {} rows".format(len(df)))
