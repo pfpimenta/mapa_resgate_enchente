@@ -22,6 +22,8 @@ api_key = 'AIzaSyDL56Xt2OqMo8uTyIS1xxgdcG6JhSQWSpU'
 IDENTIFIER_COLUMNS = ["DATAHORA", "NUMPESSOAS", "DETALHES", "LOGRADOURO", "CONTATORESGATADO", 
                       "DESCRICAORESGATE", "NUM","COMPLEMENTO","BAIRRO","CIDADE"]
 THIS_FOLDERPATH = os.getcwd()
+HTML_BACKUPS_FOLDERPATH = THIS_FOLDERPATH + "/html_backup"
+MAPPED_BACKUPS_FOLDERPATH = THIS_FOLDERPATH + "/mapped_backup"
 URL_DADOS_GABINETE = 'https://onedrive.live.com/download?resid=C734B4D1CCD6CEA6!94437&authkey=!ABnn6msPt2x5OFk'
 HTMLMAPA_FILEPATH =  THIS_FOLDERPATH + "/mapa.html"
 HTMLINDEX_FILEPATH =  THIS_FOLDERPATH + "/index.html"
@@ -34,7 +36,6 @@ DF_TEMP_FILEPATH =  THIS_FOLDERPATH + "/df_temp.csv"
 DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
 
-# TODO usar essas funcoes!!!
 def get_place_id(input_text: str, api_key: str) -> str:
     endpoint_url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
     params = {
@@ -130,13 +131,11 @@ def get_google_sheet(spreadsheet_id: str) -> pd.DataFrame:
     if response.status_code == 200:
         csv_data = StringIO(response.content.decode("utf-8"))
         df = pd.read_csv(csv_data, sep=",", dtype=str)
-        print(f"Fetched {len(df)} rows from Google Sheets")
+        print(f"Fetched {len(df)} rows from LAGON Google Sheets")
     else:
         print(f"Requisicao dos dados do Google Sheet falhou com erro {response.status_code}")
         sys.exit(1)
     return df
-# url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSs1ljv88IOv8G8C0L79b2ZZgNxwQVmrkcOJw50rRuZmgMj54fyVPZpCGwg5VsAUp9q5OuxXGTH3-4h/pub?output=csv"
-# df = pd.read_csv(url, header=1)  # Usa a segunda linha como cabeçalho
 
 def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     cols = df.iloc[0]
@@ -158,6 +157,7 @@ def get_df_sheets() -> pd.DataFrame:
     df_sheets = df_sheets[df_sheets["len"]>0]
     df_sheets = df_sheets[df_sheets["ENCERRADO"]!="S"]
     df_sheets = df_sheets.drop("len",axis = 1)
+    print(f"Fetched {len(df_sheets)} rows from LAGON")
     return df_sheets
 
 def get_df_gabinete() -> pd.DataFrame:
@@ -167,7 +167,6 @@ def get_df_gabinete() -> pd.DataFrame:
     df_gabinete = pd.read_excel(BytesIO(response.content))
     df_gabinete = df_gabinete[df_gabinete["ENCERRADO"]!="S"]
     print(f"Fetched {len(df_gabinete)} rows from GABINETE")
-    #print(df_gabinete)
     return df_gabinete
 
 def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
@@ -197,13 +196,11 @@ def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
     df_gabinete["CADASTRADO"] = ""
     df_gabinete["ENCERRADO"] = ""
     df_gabinete.drop(axis=1, labels=['Unnamed: 0', 'Unnamed: 7', 'PRIORIDADES'], inplace=True)
-    #print(df_gabinete["LOGRADOURO"])
-    #sys.exit()
     return df_gabinete
 
 
 def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
-    #FIRST ATTEMPT
+
     if not os.path.exists(DF_MAPPED_FILEPATH):
         df = get_coords_df(df_without_coords)
         df.to_csv(DF_MAPPED_FILEPATH, index = False)
@@ -235,33 +232,18 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
     df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
     return df, df_unmapped
 
-def generate_html(df_without_coords: pd.DataFrame):
-    """ gera mapa a partir do arquivo df_mapped.csv
-    """
 
+def generate_html(df_mapped: pd.DataFrame, has_map_data_changed: bool = True):
+    """ gera mapa a partir do DataFrame df_mapped
+    """
     # Create a map centered around Porto Alegre
     map_porto_alegre = folium.Map(location=[-30.0346, -51.2177], zoom_start=12)
 
     # Marker cluster
     marker_cluster = MarkerCluster().add_to(map_porto_alegre)
 
-    df = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
-    print(f"Loaded {DF_MAPPED_FILEPATH}")
-
-    # treat NaN values
-    df = df[df["latitude"].notna()]
-
-    #remove ENCERRADOS
-    print("Removing ENCERRADO")
-    print("Before removal: {} rows".format(len(df)))
-    df = pd.merge(df_without_coords, df[IDENTIFIER_COLUMNS + ["success","latitude","longitude"]], 
-                  on = IDENTIFIER_COLUMNS, how = "left")
-    df = df[df["success"]=="1"]
-    df = df[df["ENCERRADO"]!="S"]
-    print("After removal: {} rows".format(len(df)))
-
     # Add markers to the map
-    for idx, row in df.iterrows():
+    for idx, row in df_mapped.iterrows():
         html = """
         AVISO!
         POR FAVOR VERIFIQUE SE O ENDEREÇO NO MAPA
@@ -308,13 +290,51 @@ def generate_html(df_without_coords: pd.DataFrame):
     map_porto_alegre.save(HTMLINDEX_FILEPATH)
     print(f"Saved {HTMLINDEX_FILEPATH}")
 
-    # copiar backup do HTML
-    now = datetime.now() # current date and time
-    format = "%Y_%m_%d-%H_%M_%S"
-    timestamp = now.strftime(format)
-    backup_html_filepath = THIS_FOLDERPATH + f"/backup_mapa_{timestamp}.html"
-    shutil.copyfile(HTMLMAPA_FILEPATH, backup_html_filepath)
-    print(f"Saved backup {backup_html_filepath}")
+    # TODO FIX check if has changed since last backup
+    os.makedirs(HTML_BACKUPS_FOLDERPATH, exist_ok=True)
+
+    backup_filepath_list = os.listdir(HTML_BACKUPS_FOLDERPATH)
+    backup_filepath_list = list(filter(lambda x: x[-5:] == '.html', backup_filepath_list))
+    if len(backup_filepath_list) > 0:
+        last_backup_filepath = HTML_BACKUPS_FOLDERPATH + "/" + sorted(backup_filepath_list)[-1]
+    else:
+        last_backup_filepath = " "
+        has_html_changed = True
+
+    # save backup only if the map data has changed
+    if has_map_data_changed:
+        now = datetime.now() # current date and time
+        format = "%Y_%m_%d-%H_%M_%S"
+        timestamp = now.strftime(format)
+        backup_html_filepath = HTML_BACKUPS_FOLDERPATH + f"/backup_mapa_{timestamp}.html"
+        shutil.copyfile(HTMLMAPA_FILEPATH, backup_html_filepath)
+        print(f"Saved backup {backup_html_filepath}")
+    else:
+        print(f"Nothing changed since last backup {last_backup_filepath}")
+
+def generate_map_data():
+    # TODO
+    # carrega dados das tabelas
+    df_sheets = get_df_sheets()
+    df_gabinete = get_df_gabinete()
+
+    # save CSVs 
+    df_sheets.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
+    print(f"Saved {DF_SHEETS_FILEPATH}")
+    df_gabinete.to_csv(path_or_buf=DF_GABINETE_FILEPATH)
+    print(f"Saved {DF_GABINETE_FILEPATH}")
+
+    # merge data from LAGOM and GABINETE sources:
+    df_gabinete = process_df_gabinete(df_gabinete)
+    df_without_coords = pd.concat([df_sheets, df_gabinete])
+    # trata dados
+
+    # save CSV before getting coordinates
+    df_without_coords.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
+    print(f"Saved {DF_SHEETS_FILEPATH}")
+    pass
+
+    # return df_mapped
 
     
 def main():
@@ -337,20 +357,59 @@ def main():
 
     if DEBUG:
         # pra rodar mais rapido
-        df_without_coords = df_without_coords.iloc[0:5]
+        df_without_coords = df_without_coords.iloc[0:40]
 
     # save CSV before getting coordinates
     df_without_coords.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
     print(f"Saved {DF_SHEETS_FILEPATH}")
 
-    # TODO pegar coordenadas ja geradas pra nao ter que pegar de novo
-
     # pegar coordenadas
     df, df_unmapped = get_df_with_coordinates(df_without_coords=df_without_coords)
 
+    # ultimo tratamento
+    # TODO organizar numa funcao
+    df_mapped = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
+    print(f"Loaded {DF_MAPPED_FILEPATH}")
+
+    # treat NaN values
+    df_mapped = df_mapped[df_mapped["latitude"].notna()]
+
+    #remove ENCERRADOS
+    print("Removing ENCERRADO")
+    print("Before removal: {} rows".format(len(df_mapped)))
+    df_mapped = pd.merge(df_without_coords, df_mapped[IDENTIFIER_COLUMNS + ["success","latitude","longitude"]], 
+                  on = IDENTIFIER_COLUMNS, how = "left")
+    df_mapped = df_mapped[df_mapped["success"]=="1"]
+    df_mapped = df_mapped[df_mapped["ENCERRADO"]!="S"]
+    print("After removal: {} rows".format(len(df_mapped)))
+
+    # check if map data has changed since last update
+    os.makedirs(MAPPED_BACKUPS_FOLDERPATH, exist_ok=True)
+    backup_filepath_list = os.listdir(MAPPED_BACKUPS_FOLDERPATH)
+    backup_filepath_list = list(filter(lambda x: x[-4:] == '.csv', backup_filepath_list))
+    if len(backup_filepath_list) > 0:
+        last_backup_filepath = MAPPED_BACKUPS_FOLDERPATH + "/" + sorted(backup_filepath_list)[-1]
+        last_df_mapped_backup = pd.read_csv(last_backup_filepath, dtype = str)
+        has_map_data_changed = not df_mapped.fillna('').reset_index(drop=True).eq(last_df_mapped_backup.fillna('').reset_index(drop=True)).all().all()
+    else:
+        last_backup_filepath = " "
+        has_map_data_changed = True
+
+    # save df_mapped backup if map data has changed 
+    if has_map_data_changed:
+        now = datetime.now() # current date and time
+        format = "%Y_%m_%d-%H_%M_%S"
+        timestamp = now.strftime(format)
+        backup_csv_filepath = MAPPED_BACKUPS_FOLDERPATH + f"/backup_df_mapped_{timestamp}.csv"
+        df_mapped.to_csv(path_or_buf=backup_csv_filepath, index=False)
+        print(f"Saved {backup_csv_filepath}")
+    else:
+        print(f"Nothing changed since last backup: {last_backup_filepath}")
+
+
     # criar HTML do mapa
     try:
-        generate_html(df_without_coords)
+        generate_html(df_mapped=df_mapped, has_map_data_changed=has_map_data_changed)
     except Exception as e:
         print(e)
         breakpoint()
