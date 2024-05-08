@@ -191,6 +191,11 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
         df = get_coords_df(df_without_coords)
         df.to_csv(DF_MAPPED_FILEPATH, index = False)
         print(f"Saved {DF_MAPPED_FILEPATH}")
+        #collect info from unmapped (required to save unmapped values)
+        df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
+        df_unmapped = pd.merge(df_without_coords, df_previous[IDENTIFIER_COLUMNS+["success","latitude","longitude"]], on = IDENTIFIER_COLUMNS, how = "left")
+        df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
+        df_unmapped = df_unmapped[list(df_without_coords.columns)]
     else:
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
         len0 = len(df_previous)
@@ -199,10 +204,10 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
         df_unmapped = df_unmapped[list(df_without_coords.columns)]
         df = get_coords_df(df_unmapped) # DEBUG
         df = pd.concat([df,df_previous])
-        df = df.drop_duplicates(["DATAHORA","DESCRICAORESGATE"])
-
+        
         # save DataFrame with coordinates locally
         if len(df)>len0:
+            df = df.drop_duplicates(IDENTIFIER_COLUMNS)
             df.to_csv(DF_MAPPED_FILEPATH, index = False)
             print(f"Saved {DF_MAPPED_FILEPATH}")
 
