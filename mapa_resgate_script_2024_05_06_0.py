@@ -2,29 +2,32 @@
 from difflib import SequenceMatcher
 import pandas as pd
 import folium
-from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
-import geopandas as gpd
 from folium.plugins import MarkerCluster
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from bs4 import BeautifulSoup
-import typing
 import requests
-import lxml
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut
-from geopy.geocoders import Nominatim
-from geopy.extra.rate_limiter import RateLimiter
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
 from io import StringIO
 import sys
 import os
 from geopy.geocoders import Photon
 from io import BytesIO
 from openai import OpenAI
-import openai
+from datetime import datetime
+import geopy
+import shutil
+from typing import Tuple
+
+GEOLOCATOR = Photon(user_agent="measurements")
+
+# parameters
+THIS_FOLDERPATH = os.getcwd()
+URL_DADOS_GABINETE = 'https://onedrive.live.com/download?resid=C734B4D1CCD6CEA6!94437&authkey=!ABnn6msPt2x5OFk'
+HTML_FILEPATH =  THIS_FOLDERPATH + "/mapa.html"
+DF_SHEETS_FILEPATH = THIS_FOLDERPATH + "/df_sheets.csv"
+DF_GABINETE_FILEPATH = THIS_FOLDERPATH + "/df_gabinete.csv"
+DF_WITHOUT_COORDS_FILEPATH = THIS_FOLDERPATH + "/df_without_coords.csv"
+DF_UNMAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_unmapped.csv"
+DF_MAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_mapped.csv"
+DF_TEMP_FILEPATH =  THIS_FOLDERPATH + "/df_temp.csv"
+DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
 def is_openai_api_key_valid(api_key: str):
     """Returns True if the provided OpenAI API key is valid, False otherwise."""
@@ -86,19 +89,28 @@ def get_client():
     
 gpt_client, gpt_success = get_client()   
 
-geolocator = Photon(user_agent="measurements")
 
-# parameters
-THIS_FOLDERPATH = os.getcwd()
-URL_DADOS_GABINETE = 'https://onedrive.live.com/download?resid=C734B4D1CCD6CEA6!94437&authkey=!ABnn6msPt2x5OFk'
-HTML_FILEPATH =  THIS_FOLDERPATH + "/mapa.html"
-DF_SHEETS_FILEPATH = THIS_FOLDERPATH + "/df_sheets.csv"
-DF_GABINETE_FILEPATH = THIS_FOLDERPATH + "/df_gabinete.csv"
-DF_WITHOUT_COORDS_FILEPATH = THIS_FOLDERPATH + "/df_without_coords.csv"
-DF_UNMAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_unmapped.csv"
-DF_MAPPED_FILEPATH =  THIS_FOLDERPATH + "/df_mapped.csv"
-DF_TEMP_FILEPATH =  THIS_FOLDERPATH + "/df_temp.csv"
-DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
+# TODO usar essas funcoes!!!
+def get_place_id(input_text: str, api_key: str) -> str:
+    endpoint_url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+    params = {
+        'input': input_text,
+        'key': api_key
+    }
+    response = requests.get(endpoint_url, params=params)
+    place_id = response.json()['predictions'][0]['place_id']
+    return place_id
+
+def get_location(place_id: str, api_key: str) -> Tuple[float, float]:
+    details_url = "https://maps.googleapis.com/maps/api/place/details/json"
+    params = {
+        'place_id': place_id,
+        'fields': 'geometry',
+        'key': api_key
+    }
+    response = requests.get(details_url, params=params)
+    location = response.json()['result']['geometry']['location']
+    return location['lat'], location['lng']
 
 
 def similar(a: str, b: str):
@@ -127,7 +139,7 @@ def get_coords(row: pd.core.series.Series, use_gpt = True):
         address = row['address']
         if use_gpt:
             address = gpt_clean_address(address)
-        locs = geolocator.geocode(address, timeout=1000, location_bias = (-30.0346, -51.2177),  exactly_one=False, limit = 10)
+        locs = GEOLOCATOR.geocode(address, timeout=1000, location_bias = (-30.0346, -51.2177),  exactly_one=False, limit = 10)
         if not locs:
             print(f"Failed to fetch the coordinates for: {address}")
             return ["","","0"]
@@ -231,7 +243,7 @@ def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
                                 "OBSERVAÇÃO": "DESCRICAORESGATE",
                                 "CONTATO": "CONTATORESGATADO"
                                 }, inplace=True)
-    df_gabinete["ADDRESS"] = df_gabinete.iloc[:, 0] + df_gabinete["PRIORIDADES"]
+    df_gabinete["ADDRESS"] = df_gabinete.iloc[:, 0] + " " + df_gabinete["PRIORIDADES"]
     # ADDRESS = LOGRADOURO + NUMERO + TUDO
     df_gabinete["LOGRADOURO"] = df_gabinete["ADDRESS"]
     df_gabinete["NUM"] = ""
@@ -253,16 +265,13 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
         df = get_coords_df(df_without_coords)
         df.to_csv(DF_MAPPED_FILEPATH, index = False)
         print(f"Saved {DF_MAPPED_FILEPATH}")
-
-    #REPEAT ATTEMPTS AND INCREASE COORDINATE LIST IF POSSIBLE
-    num_attempts = 1
-    for t in range(num_attempts):
+    else:
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
         len0 = len(df_previous)
         df_unmapped = pd.merge(df_without_coords, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
         df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
         df_unmapped = df_unmapped[list(df_without_coords.columns)]
-        df = get_coords_df(df_unmapped)
+        df = get_coords_df(df_unmapped) # DEBUG
         df = pd.concat([df,df_previous])
         df = df.drop_duplicates(["DATAHORA","DESCRICAORESGATE"])
 
@@ -295,6 +304,9 @@ def generate_html():
 
     df = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
     print(f"Loaded {DF_MAPPED_FILEPATH}")
+
+    # treat NaN values
+    df = df[df["latitude"].notna()]
 
     # Add markers to the map
     for idx, row in df.iterrows():
@@ -342,6 +354,13 @@ def generate_html():
     map_porto_alegre.save(HTML_FILEPATH)
     print(f"Saved {HTML_FILEPATH}")
 
+    # copiar backup do HTML
+    now = datetime.now() # current date and time
+    format = "%Y_%m_%d-%H_%M_%S"
+    timestamp = now.strftime(format)
+    backup_html_filepath = THIS_FOLDERPATH + f"/backup_mapa_{timestamp}.html"
+    shutil.copyfile(HTML_FILEPATH, backup_html_filepath)
+    print(f"Saved backup {backup_html_filepath}")
 
     
 def main():
@@ -373,10 +392,14 @@ def main():
     # TODO pegar coordenadas ja geradas pra nao ter que pegar de novo
 
     # pegar coordenadas
-    df, df_unmapped = get_df_with_coordinates(df_without_coords=df_without_coords)
+    # df, df_unmapped = get_df_with_coordinates(df_without_coords=df_without_coords)
 
     # criar HTML do mapa
-    generate_html()
+    try:
+        generate_html()
+    except Exception as e:
+        print(e)
+        breakpoint()
 
 
 if __name__ == "__main__":
