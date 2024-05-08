@@ -211,7 +211,7 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
     else:
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
         len0 = len(df_previous)
-        df_unmapped = pd.merge(df_without_coords, df_previous[["DATAHORA","DESCRICAORESGATE","success","latitude","longitude"]], on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
+        df_unmapped = pd.merge(df_without_coords, df_previous[IDENTIFIER_COLUMNS+["success","latitude","longitude"]], on = IDENTIFIER_COLUMNS, how = "left")
         df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
         df_unmapped = df_unmapped[list(df_without_coords.columns)]
         df = get_coords_df(df_unmapped) # DEBUG
@@ -255,7 +255,7 @@ def generate_html(df_without_coords: pd.DataFrame):
     print("Removing ENCERRADO")
     print("Before removal: {} rows".format(len(df)))
     df = pd.merge(df_without_coords, df[IDENTIFIER_COLUMNS + ["success","latitude","longitude"]], 
-                  on = ["DATAHORA","DESCRICAORESGATE"], how = "left")
+                  on = IDENTIFIER_COLUMNS, how = "left")
     df = df[df["success"]=="1"]
     df = df[df["ENCERRADO"]!="S"]
     print("After removal: {} rows".format(len(df)))
