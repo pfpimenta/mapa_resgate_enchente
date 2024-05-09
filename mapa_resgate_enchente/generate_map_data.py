@@ -20,7 +20,6 @@ GEOLOCATOR = Photon(user_agent="measurements")
 URL_DADOS_GABINETE = 'https://onedrive.live.com/download?resid=C734B4D1CCD6CEA6!94437&authkey=!ABnn6msPt2x5OFk'
 IDENTIFIER_COLUMNS = ["DATAHORA", "NUMPESSOAS", "DETALHES", "LOGRADOURO", "CONTATORESGATADO", 
                       "DESCRICAORESGATE", "NUM","COMPLEMENTO","BAIRRO","CIDADE"]
-DEBUG = False # pra rodar mais rapido, soh com 10 rows, pra debug
 
 # Access the api key
 load_dotenv("api_key.env")
@@ -196,8 +195,8 @@ def get_df_unmapped(df_previous: pd.DataFrame, df_without_coords : pd.DataFrame)
 def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
 
     if not os.path.exists(DF_MAPPED_FILEPATH):
-        df = get_coords_df(df_without_coords)
-        df.to_csv(DF_MAPPED_FILEPATH, index = False)
+        df_mapped = get_coords_df(df_without_coords)
+        df_mapped.to_csv(DF_MAPPED_FILEPATH, index = False)
         print(f"Saved {DF_MAPPED_FILEPATH}")
         #collect info from unmapped (required to save unmapped values)
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
@@ -206,16 +205,16 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
         len0 = len(df_previous)
         df_unmapped = get_df_unmapped(df_previous, df_without_coords)
-        df = get_coords_df(df_unmapped) # DEBUG
-        df = pd.concat([df,df_previous])
+        df_mapped = get_coords_df(df_unmapped) # DEBUG
+        df_mapped = pd.concat([df_mapped,df_previous])
         
         # save DataFrame with coordinates locally
-        if len(df)>len0:
-            df = df.drop_duplicates(IDENTIFIER_COLUMNS)
-            df.to_csv(DF_MAPPED_FILEPATH, index = False)
+        if len(df_mapped)>len0:
+            df_mapped = df_mapped.drop_duplicates(IDENTIFIER_COLUMNS)
+            df_mapped.to_csv(DF_MAPPED_FILEPATH, index = False)
             print(f"Saved {DF_MAPPED_FILEPATH}")
 
-    num_mapped = len(df)
+    num_mapped = len(df_mapped)
     num_unmapped = len(df_unmapped)
     print(f"num_mapped: {num_mapped}, num_unmapped: {num_unmapped}")
 
@@ -225,61 +224,7 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
     df_unmapped = df_unmapped[df_unmapped["success"]!="1"]
     df_unmapped = df_unmapped[list(df_without_coords.columns)]
     df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
-    return df, df_unmapped
-
-
-# TODO limpar/organizar essa funcao
-def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
-    """
-    Retorna:
-        - df_mapped : pd.DataFrame
-            TODO
-        - has_map_data_changed : bool
-            TODO
-
-    E salva:
-        - df_sheets.csv
-            TODO
-        - df_gabinete.csv
-            TODO
-        - df_mapped.csv
-            TODO
-        - df_unmapped.csv
-            TODO
-    """
-
-    df_sheets = get_df_sheets()
-    df_gabinete = get_df_gabinete()
-    df_gabinete = process_df_gabinete(df_gabinete)
-
-    # save CSVs 
-    df_sheets.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
-    print(f"Saved {DF_SHEETS_FILEPATH}")
-    df_gabinete.to_csv(path_or_buf=DF_GABINETE_FILEPATH)
-    print(f"Saved {DF_GABINETE_FILEPATH}")
-
-    # merge data from LAGOM and GABINETE sources:
-    df_without_coords = pd.concat([df_sheets, df_gabinete])
-
-    # save CSV before getting coordinates
-    df_without_coords.to_csv(path_or_buf=DF_WITHOUT_COORDS_FILEPATH)
-    print(f"Saved {DF_WITHOUT_COORDS_FILEPATH}")
-
-    if debug:
-        # pra rodar mais rapido
-        df_without_coords = df_without_coords.iloc[0:50]
-
-    # save CSV before getting coordinates
-    df_without_coords.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
-    print(f"Saved {DF_SHEETS_FILEPATH}")
-
-    # pegar coordenadas
-    df, df_unmapped = get_df_with_coordinates(df_without_coords=df_without_coords)
-
-    # ultimo tratamento
-    # TODO organizar numa funcao
-    df_mapped = pd.read_csv(DF_MAPPED_FILEPATH, dtype = str)
-    print(f"Loaded {DF_MAPPED_FILEPATH}")
+    print(f"Saved {DF_UNMAPPED_FILEPATH}")
 
     # treat NaN values
     df_mapped = df_mapped[df_mapped["latitude"].notna()]
@@ -293,6 +238,9 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
     df_mapped = df_mapped[df_mapped["ENCERRADO"]!="S"]
     print("After removal: {} rows".format(len(df_mapped)))
 
+    return df_mapped, df_unmapped
+
+def save_backups(df_mapped: pd.DataFrame) -> bool:
     # check if map data has changed since last update
     os.makedirs(MAPPED_BACKUPS_FOLDERPATH, exist_ok=True)
     backup_filepath_list = os.listdir(MAPPED_BACKUPS_FOLDERPATH)
@@ -315,6 +263,57 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
         print(f"Saved {backup_csv_filepath}")
     else:
         print(f"Nothing changed since last backup: {last_backup_filepath}")
+    
+    return has_map_data_changed
+
+
+def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
+    """
+    Retorna:
+        - df_mapped : pd.DataFrame
+            tabela com dados LAGON e GABINETE, com coordenada para cada row
+        - has_map_data_changed : bool
+            True caso tenha tido mudança no mapa desde a ultima atualizacao,
+            False otherwise
+
+    E salva:
+        - df_sheets.csv
+            backup dos dados crus da tabela LAGON
+        - df_gabinete.csv
+            backup dos dados crus da tabela GABINETE
+        - df_mapped.csv
+            tabela com dados LAGON e GABINETE, com coordenada para cada row
+        - df_unmapped.csv
+            rows das tabelas LAGON e GABINETE que não conseguimos pegar as coordenadas
+    """
+    # fetch data
+    df_sheets = get_df_sheets()
+    df_gabinete = get_df_gabinete()
+    # format df_gabinete to have the same columns as df_sheets
+    df_gabinete = process_df_gabinete(df_gabinete)
+
+    # save CSVs 
+    df_sheets.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
+    print(f"Saved {DF_SHEETS_FILEPATH}")
+    df_gabinete.to_csv(path_or_buf=DF_GABINETE_FILEPATH)
+    print(f"Saved {DF_GABINETE_FILEPATH}")
+
+    # merge data from LAGOM and GABINETE sources:
+    df_without_coords = pd.concat([df_sheets, df_gabinete])
+
+    # save CSV before getting coordinates
+    df_without_coords.to_csv(path_or_buf=DF_WITHOUT_COORDS_FILEPATH)
+    print(f"Saved {DF_WITHOUT_COORDS_FILEPATH}")
+
+    if debug:
+        # pra rodar mais rapido
+        df_without_coords = df_without_coords.iloc[0:50]
+
+    # pegar coordenadas
+    df_mapped, df_unmapped = get_df_with_coordinates(df_without_coords=df_without_coords)
+
+    # TODO organizar numa funcao:
+    has_map_data_changed = save_backups(df_mapped=df_mapped)
 
     return df_mapped, has_map_data_changed
 
