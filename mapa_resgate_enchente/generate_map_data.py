@@ -271,14 +271,11 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
         df_unmapped = get_df_unmapped(df_previous, df_without_coords)
     else:
         df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype=str)
-        len0 = len(df_previous)
         df_unmapped = get_df_unmapped(df_previous, df_without_coords)
         df_mapped = get_coords_df(df_unmapped)  # DEBUG
         df_mapped = pd.concat([df_mapped, df_previous])
-
-        # save DataFrame with coordinates locally
-        if len(df_mapped) > len0:
-            df_mapped = df_mapped.drop_duplicates(IDENTIFIER_COLUMNS)
+        # VERIFICAR SE TA OK: tiramos o if len(df_mapped) >  len(df_previous) daqui
+        df_mapped = df_mapped.drop_duplicates(IDENTIFIER_COLUMNS)
 
     # update unmapped rows
     df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype=str)
@@ -302,17 +299,6 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
         how="left",
     )
     df_mapped = df_mapped[df_mapped["success"] == "1"]
-
-    # df_mapped 
-    num_mapped = len(df_mapped)
-    num_unmapped = len(df_unmapped)
-    print(f"num_mapped: {num_mapped}, num_unmapped: {num_unmapped}")
-
-    # save df_mapped e df_unmapped
-    df_mapped.to_csv(DF_MAPPED_FILEPATH, index=False)
-    print(f"Saved {DF_MAPPED_FILEPATH}")
-    df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
-    print(f"Saved {DF_UNMAPPED_FILEPATH}")
 
     return df_mapped, df_unmapped
 
@@ -355,6 +341,16 @@ def save_backups(df_mapped: pd.DataFrame) -> bool:
 
     return has_map_data_changed
 
+def save_final_dfs(df_mapped: pd.DataFrame, df_unmapped: pd.DataFrame):
+    num_mapped = len(df_mapped)
+    num_unmapped = len(df_unmapped)
+    print(f"num_mapped: {num_mapped}, num_unmapped: {num_unmapped}")
+
+    # save df_mapped e df_unmapped
+    df_mapped.to_csv(DF_MAPPED_FILEPATH, index=False)
+    print(f"Saved {DF_MAPPED_FILEPATH}")
+    df_unmapped.to_csv(DF_UNMAPPED_FILEPATH)
+    print(f"Saved {DF_UNMAPPED_FILEPATH}")
 
 def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
     """
@@ -403,7 +399,8 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
         df_without_coords=df_without_coords
     )
 
-    # salva df_mapped e 
+    # salva df_mapped e df_unmapped
+    save_final_dfs(df_mapped=df_mapped, df_unmapped=df_unmapped)
 
     # salva backup do df_mapped caso tenha mudado desde o ultimo backup
     has_map_data_changed = save_backups(df_mapped=df_mapped)
