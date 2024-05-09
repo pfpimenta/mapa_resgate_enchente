@@ -228,7 +228,9 @@ def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
     df_gabinete["CIDADE"] = ""
     df_gabinete["DETALHE"] = ""
     df_gabinete["CEP"] = ""
-    df_gabinete["INFORMACOES"] = df_gabinete["NUM_PESSOAS"]
+    # breakpoint()
+    # TODO botar mais info aqui:
+    df_gabinete["INFORMACOES"] = ""
     df_gabinete["NOMEPESSOAS"] = ""
     df_gabinete["CADASTRADO"] = ""
     df_gabinete.drop(
@@ -255,7 +257,7 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
 
     # remove ENCERRADOS
     print("Removing ENCERRADO")
-    print("Before removal: {} rows".format(len(df_mapped)))
+    print("Before removal: {} rows".format(len(df_without_coords)))
     df_without_coords = df_without_coords[df_without_coords["ENCERRADO"] != "S"]
     df_without_coords = df_without_coords[df_without_coords["ENCERRADO"] != "s"]
     print("After removal: {} rows".format(len(df_without_coords)))
@@ -277,7 +279,6 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
         # save DataFrame with coordinates locally
         if len(df_mapped) > len0:
             df_mapped = df_mapped.drop_duplicates(IDENTIFIER_COLUMNS)
-
 
     # update unmapped rows
     df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype=str)
