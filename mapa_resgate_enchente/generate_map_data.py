@@ -51,9 +51,9 @@ def get_place_id(input_text: str, api_key: str) -> str:
         place_id = response.json()["predictions"][0]["place_id"]
         return place_id
     except:
-        print(response.status_code)
-        print(response.text)
-        print(api_key)
+        if response.status_code != 200:
+            print(f"response.status_code: {response.status_code}")
+            print(f"response.text: {response.text}")
         return False
 
 
@@ -86,14 +86,11 @@ def get_coords(row: pd.core.series.Series):
 def get_coords_df(df_without_coords: pd.DataFrame):
     print(f"Getting coordinates for {len(df_without_coords)} addresses...")
     df = df_without_coords.copy()
-    df["address"] = (
-        df["LOGRADOURO"] + "," + df["NUM"] + ", " + df["BAIRRO"] + ", " + df["CIDADE"]
-    )
     outs = []
     L = len(df)
     idx = 0
     for index, row in df.iterrows():
-        if index % 5 == 0:
+        if idx % 5 == 0:
             print("row {}/{}".format(idx, L))  # print current step
         out = get_coords(row)
         outs.append(out)
@@ -116,7 +113,6 @@ def get_google_sheet(spreadsheet_id: str) -> pd.DataFrame:
     if response.status_code == 200:
         csv_data = StringIO(response.content.decode("utf-8"))
         df = pd.read_csv(csv_data, sep=",", dtype=str)
-        print(f"Fetched {len(df)} rows from LAGON Google Sheets")
     else:
         print(
             f"Requisicao dos dados do Google Sheet falhou com erro {response.status_code}"
@@ -126,9 +122,8 @@ def get_google_sheet(spreadsheet_id: str) -> pd.DataFrame:
 
 
 def prepare_df_lagon(df: pd.DataFrame) -> pd.DataFrame:
-    cols = df.iloc[0]
     # renomear colunas para evitar incompatibilidades com o sheet
-    cols[0:14] = [
+    named_cols = [
         "DATAHORA",
         "NUMPESSOAS",
         "DETALHES",
@@ -144,10 +139,20 @@ def prepare_df_lagon(df: pd.DataFrame) -> pd.DataFrame:
         "CADASTRADO",
         "ENCERRADO",
     ]
-    named_cols = [c for c in cols if len(c) > 0]
+    cols = df.iloc[0]
+    cols[0:14] = named_cols
     df.columns = cols
     df = df[named_cols]
-    df = df.iloc[1:]
+    df = df.iloc[1:] # remove header
+    # remove empty rows
+    df = df[df["LOGRADOURO"].notna()]
+    df["len"] = df["LOGRADOURO"].apply(lambda x: len(x))
+    df = df[df["len"] > 0]
+    df = df.drop("len", axis=1)
+    # create address column
+    df["address"] = (
+        df["LOGRADOURO"] + "," + df["NUM"] + ", " + df["BAIRRO"] + ", " + df["CIDADE"]
+    )
     return df
 
 
@@ -156,13 +161,9 @@ def get_df_lagon() -> pd.DataFrame:
     df_lagon = get_google_sheet(
         spreadsheet_id="1JD5serjAxnmqJWP8Y51A6wEZwqZ9A7kEUH1ZwGBx1tY"
     )
-    df_lagon = prepare_df_lagon(df_lagon)
-    df_lagon = df_lagon[df_lagon["LOGRADOURO"].notna()]
-    df_lagon["len"] = df_lagon["LOGRADOURO"].apply(lambda x: len(x))
-    df_lagon = df_lagon[df_lagon["len"] > 0]
-    df_lagon = df_lagon[df_lagon["ENCERRADO"] != "S"]
-    df_lagon = df_lagon.drop("len", axis=1)
     print(f"Fetched {len(df_lagon)} rows from LAGON")
+    df_lagon = prepare_df_lagon(df_lagon)
+    print(f"After processing, df_lagon has {len(df_lagon)} rows")
     return df_lagon
 
 
@@ -171,8 +172,10 @@ def get_df_gabinete() -> pd.DataFrame:
     assert response.status_code == 200, "Erro ao baixar o arquivo"
     # Usando pandas para ler os dados da planilha
     df_gabinete = pd.read_excel(BytesIO(response.content))
-    df_gabinete = df_gabinete[df_gabinete["ENCERRADO"] != "S"]
     print(f"Fetched {len(df_gabinete)} rows from GABINETE")
+    # format df_gabinete to have the same columns as df_lagon
+    df_gabinete = process_df_gabinete(df_gabinete)
+    print(f"After processing, df_gabinete has {len(df_gabinete)} rows")
     return df_gabinete
 
 
@@ -193,21 +196,20 @@ def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
         },
         inplace=True,
     )
-    df_gabinete["ADDRESS"] = df_gabinete.iloc[:, 0] + " " + df_gabinete["PRIORIDADES"]
-    # ADDRESS = LOGRADOURO + NUMERO + TUDO
-    df_gabinete["LOGRADOURO"] = df_gabinete["ADDRESS"]
+    df_gabinete["LOGRADOURO"] = df_gabinete.iloc[:, 0] + " " + df_gabinete["PRIORIDADES"]
+    # ADDRESS = "Av/Rua/etc" + LOGRADOURO + NUMERO + BAIRRO 
+    df_gabinete["address"] = df_gabinete["LOGRADOURO"] + ", " + df_gabinete["BAIRRO"]
+    df_gabinete["DATAHORA"] = "Não informado"
+    df_gabinete["DETALHES"] = df_gabinete["OBS"] + ", " + df_gabinete["Unnamed: 7"]
     df_gabinete["NUM"] = ""
-    df_gabinete["COMPL"] = ""
+    df_gabinete["COMPLEMENTO"] = ""
     df_gabinete["CIDADE"] = ""
-    df_gabinete["DETALHE"] = ""
     df_gabinete["CEP"] = ""
-    # breakpoint()
-    # TODO botar mais info aqui:
-    df_gabinete["INFORMACOES"] = ""
     df_gabinete["NOMEPESSOAS"] = ""
+    df_gabinete["NUMPESSOAS"] = ""
     df_gabinete["CADASTRADO"] = ""
     df_gabinete.drop(
-        axis=1, labels=["Unnamed: 0", "Unnamed: 7", "PRIORIDADES"], inplace=True
+        axis=1, labels=["Unnamed: 0", "Unnamed: 7", "OBS", "PRIORIDADES"], inplace=True
     )
     return df_gabinete
 
@@ -233,6 +235,8 @@ def fix_nan_datahora(datahora: str | float) -> pd.DataFrame:
         else:
             print("TEM UM FLOAT AQUI?")
             datahora = "Não informado."
+    elif len(datahora) == 0:
+        datahora = "Não informado."
     return datahora
 
 
@@ -247,44 +251,41 @@ def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
     df_without_coords = df_without_coords[df_without_coords["ENCERRADO"] != "S"]
     df_without_coords = df_without_coords[df_without_coords["ENCERRADO"] != "s"]
     print("After removal: {} rows".format(len(df_without_coords)))
-
-    if not os.path.exists(DF_MAPPED_FILEPATH):
-        df_mapped = get_coords_df(df_without_coords)
-        df_mapped.to_csv(DF_MAPPED_FILEPATH, index=False)
-        print(f"Saved {DF_MAPPED_FILEPATH}")
-        # collect info from unmapped (required to save unmapped values)
-        df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype=str)
-        df_unmapped = get_df_unmapped(df_previous, df_without_coords)
+    
+    # load previos df_mapped
+    if os.path.exists(DF_MAPPED_FILEPATH):
+        df_previous_mapped = pd.read_csv(DF_MAPPED_FILEPATH, dtype=str)
+        print(f"Loaded {len(df_previous_mapped)} coords from {DF_MAPPED_FILEPATH}")
     else:
-        df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype=str)
-        df_unmapped = get_df_unmapped(df_previous, df_without_coords)
-        df_mapped = get_coords_df(df_unmapped)  # DEBUG
-        df_mapped = pd.concat([df_mapped, df_previous])
-        # VERIFICAR SE TA OK: tiramos o if len(df_mapped) >  len(df_previous) daqui
-        df_mapped = df_mapped.drop_duplicates(IDENTIFIER_COLUMNS)
+        print(f"df_mapped.csv not found")
+        df_previous_mapped = pd.DataFrame(columns=df_without_coords.columns)
+        df_previous_mapped["LATITUDE"] = ""
+        df_previous_mapped["LONGITUDE"] = ""
+    # pegar soh coordenadas que nao tavam no df_mapped
+    df = df_without_coords[~df_without_coords.address.isin(df_previous_mapped.address)]
+    
+    
+    # pegar soh coordenadas que nao tavam no df_unmapped
+    # e que tao no df:
+    # load previuos df_unmapped
+    if os.path.exists(DF_UNMAPPED_FILEPATH):
+        df_previous_unmapped = pd.read_csv(DF_UNMAPPED_FILEPATH, dtype=str)
+        print(f"Loaded {len(df_previous_unmapped)} coords from {DF_UNMAPPED_FILEPATH}")
+        # tirar do df essas 
+        # TODO tirar só os q tem + de 3 tentativas (guardar num_tentativas no df_unmapped)
+        df = df[~df.address.isin(df_previous_unmapped.address)]
+    else:
+        print(f"df_unmapped.csv not found")
+        df_previous_unmapped = pd.DataFrame(columns=df.columns)
+    
+    # pegar coordenadas
+    df_mapped = get_coords_df(df)
+    # juntar com as coordenadas do df_previous
+    df_mapped = pd.concat([df_previous_mapped, df_mapped])
 
-    # update unmapped rows
-    df_previous = pd.read_csv(DF_MAPPED_FILEPATH, dtype=str)
-    df_unmapped = pd.merge(
-        df_without_coords,
-        df_previous[IDENTIFIER_COLUMNS + ["success", "latitude", "longitude"]],
-        on=IDENTIFIER_COLUMNS,
-        how="left",
-    )
-    df_unmapped = df_unmapped[df_unmapped["success"] != "1"]
-    df_unmapped = df_unmapped[list(df_without_coords.columns)]
-
-    # treat NaN values
-    df_mapped = df_mapped[df_mapped["latitude"].notna()]
-
-    # ?
-    df_mapped = pd.merge(
-        df_without_coords,
-        df_mapped[IDENTIFIER_COLUMNS + ["success", "latitude", "longitude"]],
-        on=IDENTIFIER_COLUMNS,
-        how="left",
-    )
-    df_mapped = df_mapped[df_mapped["success"] == "1"]
+    # unmapped = previous_unmapped + new_unmapped
+    new_unmapped = df[~df.address.isin(df_mapped.address)]
+    df_unmapped = pd.concat([df_previous_unmapped, new_unmapped])
 
     return df_mapped, df_unmapped
 
@@ -360,8 +361,6 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
     # fetch data
     df_lagon = get_df_lagon()
     df_gabinete = get_df_gabinete()
-    # format df_gabinete to have the same columns as df_lagon
-    df_gabinete = process_df_gabinete(df_gabinete)
 
     # save CSVs
     df_lagon.to_csv(path_or_buf=DF_LAGON_FILEPATH)
@@ -378,7 +377,10 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
 
     if debug:
         # pra rodar mais rapido
-        df_without_coords = df_without_coords.iloc[0:50]
+        print("-----------------------------------------")
+        print("------------- DEBUG MODE ON -------------")
+        print("-----------------------------------------")
+        df_without_coords = df_without_coords.iloc[0:25]
 
     # pegar coordenadas
     df_mapped, df_unmapped = get_df_with_coordinates(

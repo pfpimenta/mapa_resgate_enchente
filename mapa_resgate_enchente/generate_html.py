@@ -4,6 +4,7 @@ from folium.plugins import MarkerCluster
 import shutil
 from datetime import datetime, timedelta
 import os
+import math
 import hashlib
 from paths import (
     HTML_BACKUPS_FOLDERPATH,
@@ -44,45 +45,49 @@ def get_html_map(df: pd.DataFrame):
 
     # Marker cluster
     marker_cluster = MarkerCluster().add_to(map_porto_alegre)
-
     # Add markers to the map
     for idx, row in df.iterrows():
-        html = """
-        AVISO!
-        POR FAVOR VERIFIQUE SE O ENDEREÇO NO MAPA
-        CORRESPONDE COM AS INFORMAÇÕES ABAIXO!
+        if isinstance(row["LOGRADOURO"], str):
+            if len(row["LOGRADOURO"]) == 0:
+                print(f"LOGRADOURO vazio! row: {str(row.address)}")
+        elif math.isnan(row["LOGRADOURO"]):
+            print(f"LOGRADOURO vazio! row: {str(row.address)}")
+        try:
+            html = """
+            AVISO!
+            POR FAVOR VERIFIQUE SE O ENDEREÇO NO MAPA
+            CORRESPONDE COM AS INFORMAÇÕES ABAIXO!
 
-        Data e hora: {data}<br>
+            Data e hora: {data}<br>
 
-        Cidade: {cidade}<br>
-        
-        Descrição: {desc}<br>
+            Cidade: {cidade}<br>
+            
+            Descrição: {desc}<br>
 
-        Detalhe: {det}<br>
-        
-        Informações: {info}<br>
-        
-        Contato: {contato}<br>
+            Detalhe: {det}<br>
+                        
+            Contato: {contato}<br>
 
-        Logradouro: {logradouro}<br>
+            Logradouro: {logradouro}<br>
 
-        Número: {num} <br>
+            Número: {num} <br>
 
-        Complemento: {compl}<br>
+            Complemento: {compl}<br>
 
-        <a href="http://enchente.info:8080/api/baixar_ponto/{point_hash}">Registrar como resgatado</a>
-        """.format(
-            data=row["DATAHORA"],
-            cidade=row["CIDADE"],
-            desc=row["DESCRICAORESGATE"],
-            det=row["DETALHE"],
-            info=row["INFORMACOES"],
-            contato=row["CONTATORESGATADO"],
-            logradouro=row["LOGRADOURO"],
-            num=row["NUM"],
-            compl=row["COMPL"],
-            point_hash = apply_md5(str(row["NUMPESSOAS"]) + row["LOGRADOURO"]),
-        )
+            <a href="http://enchente.info:8080/api/baixar_ponto/{point_hash}">Registrar como resgatado</a>
+            """.format(
+                data=row["DATAHORA"],
+                cidade=row["CIDADE"],
+                desc=row["DESCRICAORESGATE"],
+                det=row["DETALHES"],
+                contato=row["CONTATORESGATADO"],
+                logradouro=row["LOGRADOURO"],
+                num=row["NUM"],
+                compl=row["COMPLEMENTO"],
+                point_hash = apply_md5(str(row["latitude"]) + str(row["longitude"])),
+            )
+        except:
+            breakpoint()
         lat = row["latitude"]
         long = row["longitude"]
         iframe = folium.IFrame(html)
