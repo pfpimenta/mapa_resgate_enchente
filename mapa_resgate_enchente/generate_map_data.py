@@ -1,5 +1,4 @@
 # mapa resgate script 2024_06_05_0
-from difflib import SequenceMatcher
 import pandas as pd
 import requests
 from io import StringIO
@@ -8,10 +7,9 @@ import os
 from geopy.geocoders import Photon
 from io import BytesIO
 from datetime import datetime
-import geopy
 from typing import Tuple
 from paths import (
-    DF_SHEETS_FILEPATH,
+    DF_LAGON_FILEPATH,
     DF_GABINETE_FILEPATH,
     DF_WITHOUT_COORDS_FILEPATH,
     DF_UNMAPPED_FILEPATH,
@@ -19,6 +17,7 @@ from paths import (
     MAPPED_BACKUPS_FOLDERPATH,
 )
 from dotenv import load_dotenv
+import math
 
 GEOLOCATOR = Photon(user_agent="measurements")
 
@@ -38,7 +37,7 @@ IDENTIFIER_COLUMNS = [
 ]
 
 # Access the api key
-# load_dotenv("api_key.env")
+load_dotenv("api_key.env")
 api_key = os.getenv("API_KEY", None)
 if api_key is None:
     raise ValueError("API_KEY not set! Please set this env var.")
@@ -69,28 +68,6 @@ def get_location(place_id: str, api_key: str) -> Tuple[float, float]:
         return False, False
 
 
-def similar(a: str, b: str):
-    return SequenceMatcher(None, a, b).ratio()
-
-
-def similarity_value(x: pd.core.series.Series, location: geopy.location.Location):
-    if "city" in location.raw["properties"].keys():
-        city = location.raw["properties"]["city"]
-    else:
-        return False
-
-    if "street" in location.raw["properties"].keys():
-        street = location.raw["properties"]["street"]
-    elif "name" in location.raw["properties"].keys():
-        street = location.raw["properties"]["name"]
-    else:
-        return False
-
-    sims = [similar(street, x["LOGRADOURO"]), similar(city, x["CIDADE"])]
-    min_sim = min(sims)
-    return min_sim
-
-
 def get_coords(row: pd.core.series.Series):
     address = row["address"]
     place_id = get_place_id(address, api_key)
@@ -106,9 +83,9 @@ def get_coords(row: pd.core.series.Series):
         return ["", "", "0"]
 
 
-def get_coords_df(df_sheets: pd.DataFrame):
-    print(f"Getting coordinates for {len(df_sheets)} addresses...")
-    df = df_sheets.copy()
+def get_coords_df(df_without_coords: pd.DataFrame):
+    print(f"Getting coordinates for {len(df_without_coords)} addresses...")
+    df = df_without_coords.copy()
     df["address"] = (
         df["LOGRADOURO"] + "," + df["NUM"] + ", " + df["BAIRRO"] + ", " + df["CIDADE"]
     )
@@ -132,12 +109,8 @@ def get_coords_df(df_sheets: pd.DataFrame):
     return df
 
 
-# ----------------------------------------------------------------------------
-# Pull data from sheets -----------------------------------------------------
-# ----------------------------------------------------------------------------
-
-
 def get_google_sheet(spreadsheet_id: str) -> pd.DataFrame:
+    # pull data from LAGON google sheet
     url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=csv"
     response = requests.get(url)
     if response.status_code == 200:
@@ -152,7 +125,7 @@ def get_google_sheet(spreadsheet_id: str) -> pd.DataFrame:
     return df
 
 
-def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def prepare_df_lagon(df: pd.DataFrame) -> pd.DataFrame:
     cols = df.iloc[0]
     # renomear colunas para evitar incompatibilidades com o sheet
     cols[0:14] = [
@@ -178,19 +151,19 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_df_sheets() -> pd.DataFrame:
+def get_df_lagon() -> pd.DataFrame:
     # get data from google sheets
-    df_sheets = get_google_sheet(
+    df_lagon = get_google_sheet(
         spreadsheet_id="1JD5serjAxnmqJWP8Y51A6wEZwqZ9A7kEUH1ZwGBx1tY"
     )
-    df_sheets = prepare_dataframe(df_sheets)
-    df_sheets = df_sheets[df_sheets["LOGRADOURO"].notna()]
-    df_sheets["len"] = df_sheets["LOGRADOURO"].apply(lambda x: len(x))
-    df_sheets = df_sheets[df_sheets["len"] > 0]
-    df_sheets = df_sheets[df_sheets["ENCERRADO"] != "S"]
-    df_sheets = df_sheets.drop("len", axis=1)
-    print(f"Fetched {len(df_sheets)} rows from LAGON")
-    return df_sheets
+    df_lagon = prepare_df_lagon(df_lagon)
+    df_lagon = df_lagon[df_lagon["LOGRADOURO"].notna()]
+    df_lagon["len"] = df_lagon["LOGRADOURO"].apply(lambda x: len(x))
+    df_lagon = df_lagon[df_lagon["len"] > 0]
+    df_lagon = df_lagon[df_lagon["ENCERRADO"] != "S"]
+    df_lagon = df_lagon.drop("len", axis=1)
+    print(f"Fetched {len(df_lagon)} rows from LAGON")
+    return df_lagon
 
 
 def get_df_gabinete() -> pd.DataFrame:
@@ -204,8 +177,8 @@ def get_df_gabinete() -> pd.DataFrame:
 
 
 def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
-    """deixa as colunas iguais a df_sheets"""
-    # df_sheets.columns:
+    """deixa as colunas iguais a df_lagon"""
+    # df_lagon.columns:
     # ['DATAHORA', 'DESCRICAORESGATE', 'DETALHE', 'LOGRADOURO',
     # 'CONTATORESGATADO', 'INFORMACOES', 'NUM', 'COMPL', 'BAIRRO', 'CIDADE',
     # 'CEP', 'NOMEPESSOAS', 'CADASTRADO', 'ENCERRADO'],
@@ -253,7 +226,20 @@ def get_df_unmapped(
     return df_unmapped
 
 
+def fix_nan_datahora(datahora: str | float) -> pd.DataFrame:
+    if isinstance(datahora, float):
+        if math.isnan(datahora):
+            datahora = "Não informado. (nan)"
+        else:
+            print("TEM UM FLOAT AQUI?")
+            datahora = "Não informado."
+    return datahora
+
+
 def get_df_with_coordinates(df_without_coords: pd.DataFrame) -> pd.DataFrame:
+
+    # fix nan DATAHORA
+    df_without_coords["DATAHORA"] = df_without_coords["DATAHORA"].apply(fix_nan_datahora)
 
     # remove ENCERRADOS
     print("Removing ENCERRADO")
@@ -362,7 +348,7 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
             False otherwise
 
     E salva:
-        - df_sheets.csv
+        - df_lagon.csv
             backup dos dados crus da tabela LAGON
         - df_gabinete.csv
             backup dos dados crus da tabela GABINETE
@@ -372,19 +358,19 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
             rows das tabelas LAGON e GABINETE que não conseguimos pegar as coordenadas
     """
     # fetch data
-    df_sheets = get_df_sheets()
+    df_lagon = get_df_lagon()
     df_gabinete = get_df_gabinete()
-    # format df_gabinete to have the same columns as df_sheets
+    # format df_gabinete to have the same columns as df_lagon
     df_gabinete = process_df_gabinete(df_gabinete)
 
     # save CSVs
-    df_sheets.to_csv(path_or_buf=DF_SHEETS_FILEPATH)
-    print(f"Saved {DF_SHEETS_FILEPATH}")
+    df_lagon.to_csv(path_or_buf=DF_LAGON_FILEPATH)
+    print(f"Saved {DF_LAGON_FILEPATH}")
     df_gabinete.to_csv(path_or_buf=DF_GABINETE_FILEPATH)
     print(f"Saved {DF_GABINETE_FILEPATH}")
 
     # merge data from LAGOM and GABINETE sources:
-    df_without_coords = pd.concat([df_sheets, df_gabinete])
+    df_without_coords = pd.concat([df_lagon, df_gabinete])
 
     # save CSV before getting coordinates
     df_without_coords.to_csv(path_or_buf=DF_WITHOUT_COORDS_FILEPATH)

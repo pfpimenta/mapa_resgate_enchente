@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 PROJECT_FOLDERPATH = Path(__file__).parent.parent
@@ -14,7 +13,7 @@ HTMLMAPA_24h_FILEPATH = PROJECT_FOLDERPATH / "mapa_24h.html"
 HTMLMAPA_HOJE_FILEPATH = PROJECT_FOLDERPATH / "mapa_hoje.html"
 HTMLINDEX_FILEPATH = PROJECT_FOLDERPATH / "index.html"
 
-DF_SHEETS_FILEPATH = CSV_DATA_FOLDERPATH / "df_sheets.csv"
+DF_LAGON_FILEPATH = CSV_DATA_FOLDERPATH / "df_lagon.csv"
 DF_GABINETE_FILEPATH = CSV_DATA_FOLDERPATH / "df_gabinete.csv"
 DF_WITHOUT_COORDS_FILEPATH = CSV_DATA_FOLDERPATH / "df_without_coords.csv"
 DF_UNMAPPED_FILEPATH = CSV_DATA_FOLDERPATH / "df_unmapped.csv"
