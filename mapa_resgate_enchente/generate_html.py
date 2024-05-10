@@ -81,7 +81,7 @@ def get_html_map(df: pd.DataFrame):
             logradouro=row["LOGRADOURO"],
             num=row["NUM"],
             compl=row["COMPL"],
-            point_hash = apply_md5(row["NUMPESSOAS"].astype(str) + row["LOGRADOURO"].astype(str)),
+            point_hash = apply_md5(str(row["NUMPESSOAS"]) + row["LOGRADOURO"]),
         )
         lat = row["latitude"]
         long = row["longitude"]
