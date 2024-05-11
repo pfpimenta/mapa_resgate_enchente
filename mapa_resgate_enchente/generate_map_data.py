@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Tuple
 from paths import (
     DF_LAGON_FILEPATH,
-    DF_GABINETE_FILEPATH,
     DF_WITHOUT_COORDS_FILEPATH,
     DF_UNMAPPED_FILEPATH,
     DF_MAPPED_FILEPATH,
@@ -69,7 +68,7 @@ def get_location(place_id: str, api_key: str) -> Tuple[float, float]:
 
 
 def get_coords(row: pd.core.series.Series):
-    address = row["address"]
+    address = str(row["address"]) + ", Rio Grande do Sul, Brasil"
     place_id = get_place_id(address, api_key)
     if place_id:
         latitude, longitude = get_location(place_id, api_key)
@@ -167,52 +166,6 @@ def get_df_lagon() -> pd.DataFrame:
     return df_lagon
 
 
-def get_df_gabinete() -> pd.DataFrame:
-    response = requests.get(URL_DADOS_GABINETE)
-    assert response.status_code == 200, "Erro ao baixar o arquivo"
-    # Usando pandas para ler os dados da planilha
-    df_gabinete = pd.read_excel(BytesIO(response.content))
-    print(f"Fetched {len(df_gabinete)} rows from GABINETE")
-    # format df_gabinete to have the same columns as df_lagon
-    df_gabinete = process_df_gabinete(df_gabinete)
-    print(f"After processing, df_gabinete has {len(df_gabinete)} rows")
-    return df_gabinete
-
-
-def process_df_gabinete(df_gabinete: pd.DataFrame) -> pd.DataFrame:
-    """deixa as colunas iguais a df_lagon"""
-    # df_lagon.columns:
-    # ['DATAHORA', 'DESCRICAORESGATE', 'DETALHE', 'LOGRADOURO',
-    # 'CONTATORESGATADO', 'INFORMACOES', 'NUM', 'COMPL', 'BAIRRO', 'CIDADE',
-    # 'CEP', 'NOMEPESSOAS', 'CADASTRADO', 'ENCERRADO'],
-    # df_gabinete.columns:
-    # ['Unnamed: 0', 'PRIORIDADES', 'Bairro', 'OBSERVAÇÃO', 'CONTATO', 'OBS',
-    # 'RESGATADOS ', 'Unnamed: 7'],
-    df_gabinete.rename(
-        columns={
-            "Bairro": "BAIRRO",
-            "OBSERVAÇÃO": "DESCRICAORESGATE",
-            "CONTATO": "CONTATORESGATADO",
-        },
-        inplace=True,
-    )
-    df_gabinete["LOGRADOURO"] = df_gabinete.iloc[:, 0] + " " + df_gabinete["PRIORIDADES"]
-    # ADDRESS = "Av/Rua/etc" + LOGRADOURO + NUMERO + BAIRRO 
-    df_gabinete["address"] = df_gabinete["LOGRADOURO"] + ", " + df_gabinete["BAIRRO"]
-    df_gabinete["DATAHORA"] = "Não informado"
-    df_gabinete["DETALHES"] = df_gabinete["OBS"] + ", " + df_gabinete["Unnamed: 7"]
-    df_gabinete["NUM"] = ""
-    df_gabinete["COMPLEMENTO"] = ""
-    df_gabinete["CIDADE"] = ""
-    df_gabinete["CEP"] = ""
-    df_gabinete["NOMEPESSOAS"] = ""
-    df_gabinete["NUMPESSOAS"] = ""
-    df_gabinete["CADASTRADO"] = ""
-    df_gabinete.drop(
-        axis=1, labels=["Unnamed: 0", "Unnamed: 7", "OBS", "PRIORIDADES"], inplace=True
-    )
-    return df_gabinete
-
 
 def get_df_unmapped(
     df_previous: pd.DataFrame, df_without_coords: pd.DataFrame
@@ -228,7 +181,7 @@ def get_df_unmapped(
     return df_unmapped
 
 
-def fix_nan_datahora(datahora: str | float) -> pd.DataFrame:
+def fix_nan_datahora(datahora: str) -> pd.DataFrame:
     if isinstance(datahora, float):
         if math.isnan(datahora):
             datahora = "Não informado. (nan)"
@@ -351,8 +304,6 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
     E salva:
         - df_lagon.csv
             backup dos dados crus da tabela LAGON
-        - df_gabinete.csv
-            backup dos dados crus da tabela GABINETE
         - df_mapped.csv
             tabela com dados LAGON e GABINETE, com coordenada para cada row
         - df_unmapped.csv
@@ -360,16 +311,14 @@ def generate_map_data(debug: bool) -> Tuple[pd.DataFrame, bool]:
     """
     # fetch data
     df_lagon = get_df_lagon()
-    df_gabinete = get_df_gabinete()
 
     # save CSVs
     df_lagon.to_csv(path_or_buf=DF_LAGON_FILEPATH)
     print(f"Saved {DF_LAGON_FILEPATH}")
-    df_gabinete.to_csv(path_or_buf=DF_GABINETE_FILEPATH)
-    print(f"Saved {DF_GABINETE_FILEPATH}")
+
 
     # merge data from LAGOM and GABINETE sources:
-    df_without_coords = pd.concat([df_lagon, df_gabinete])
+    df_without_coords = df_lagon
 
     # save CSV before getting coordinates
     df_without_coords.to_csv(path_or_buf=DF_WITHOUT_COORDS_FILEPATH)
